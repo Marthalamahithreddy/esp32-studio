@@ -20,7 +20,9 @@ User (Browser) → Flask Backend → ESP32 Device
                              → Circuit Simulator (Canvas)
 
 ## 📸 Screenshots
-(Add screenshots here later)
+
+### 🖥️ ESP32 Studio Interface
+![ESP32 Studio UI](images/ui.png)
 
 ## 🚀 How to Run Locally
 
