@@ -1,0 +1,2698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Gen Alpha ESP32 Studio — 3D Simulator</title>
+
+<!-- Three.js r128 — loaded from CDN, cached by browser after first load -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<style>
+/* ═══════════════════════════════════════
+   DESIGN SYSTEM — PCB Industrial Dark
+   Inspired by real EDA tools (KiCad, Altium)
+   Monospace-first, copper-accented, clinical
+═══════════════════════════════════════ */
+:root {
+  --bg:        #0a0c0f;
+  --panel:     #0f1318;
+  --surface:   #151b22;
+  --surface2:  #1c2430;
+  --border:    #1e2d3d;
+  --border2:   #2a3f55;
+  --txt:       #c9d1d9;
+  --txt2:      #8b949e;
+  --txt3:      #484f58;
+  --copper:    #d4854a;
+  --copper2:   #f0a060;
+  --teal:      #39d0c4;
+  --teal2:     #26b5aa;
+  --green:     #3fb950;
+  --red:       #f85149;
+  --yellow:    #e3b341;
+  --blue:      #58a6ff;
+  --purple:    #bc8cff;
+  --pcb-green: #0f5132;
+  --pcb-light: #1a7a4a;
+  --silk:      #e8e8dc;
+  --mono:      'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --sans:      'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  --serif:     'Playfair Display', Georgia, serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%; width: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--txt);
+  font-family: var(--sans);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── LAYOUT ── */
+#app {
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  grid-template-rows: 42px 1fr 220px 28px;
+  grid-template-areas:
+    "toolbar  toolbar"
+    "sim      editor"
+    "sim      console"
+    "statusL  statusR";
+  height: 100vh;
+  gap: 0;
+}
+
+/* ── TOOLBAR ── */
+#toolbar {
+  grid-area: toolbar;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 6px;
+  box-shadow: 0 1px 0 var(--border2);
+  z-index: 10;
+  overflow: hidden;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+.brand-mark {
+  width: 28px; height: 28px;
+  border: 1.5px solid var(--copper);
+  border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #1a1000 0%, #2a1800 100%);
+  position: relative;
+}
+.brand-mark::after {
+  content: '⚡';
+  font-size: 14px;
+  filter: sepia(1) saturate(3) hue-rotate(10deg);
+}
+.brand-name {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--copper2);
+  letter-spacing: 0.05em;
+  line-height: 1.2;
+}
+.brand-sub {
+  font-size: 9px;
+  color: var(--txt3);
+  font-family: var(--mono);
+  letter-spacing: 0.08em;
+}
+
+.tsep { width: 1px; height: 24px; background: var(--border); flex-shrink: 0; margin: 0 4px; }
+
+/* Toolbar buttons */
+.tbtn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--txt2);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.tbtn:hover { border-color: var(--border2); color: var(--txt); background: var(--surface2); }
+.tbtn.primary { background: var(--teal2); color: #000; border-color: var(--teal); font-weight: 700; }
+.tbtn.primary:hover { background: var(--teal); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(57,208,196,.3); }
+.tbtn.danger { background: rgba(248,81,73,.1); color: var(--red); border-color: rgba(248,81,73,.3); }
+.tbtn.danger:hover { background: rgba(248,81,73,.2); }
+.tbtn:disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
+.tbtn svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+.tselect {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--txt2);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  outline: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.tselect:focus { border-color: var(--teal2); }
+.tselect option { background: var(--surface); }
+
+#sim-status-badge {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--txt3);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+#sim-status-badge.running {
+  border-color: rgba(63,185,80,.4);
+  color: var(--green);
+  background: rgba(63,185,80,.08);
+}
+#sim-status-badge .pulse {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--txt3);
+  flex-shrink: 0;
+}
+#sim-status-badge.running .pulse {
+  background: var(--green);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(63,185,80,.6); }
+  50% { box-shadow: 0 0 0 5px rgba(63,185,80,.0); }
+}
+
+/* ── 3D VIEWPORT ── */
+#sim-area {
+  grid-area: sim;
+  position: relative;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+#three-canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Overlay controls on top of 3D view */
+#sim-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+}
+
+#cam-controls {
+  position: absolute;
+  bottom: 14px;
+  right: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: all;
+}
+.cam-btn {
+  width: 30px; height: 30px;
+  border-radius: 6px;
+  border: 1px solid var(--border2);
+  background: rgba(15,19,24,.85);
+  backdrop-filter: blur(4px);
+  color: var(--txt2);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.12s;
+}
+.cam-btn:hover { border-color: var(--teal2); color: var(--teal); }
+
+#comp-toolbar {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 260px;
+  pointer-events: all;
+}
+.comp-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: rgba(15,19,24,.88);
+  backdrop-filter: blur(6px);
+  color: var(--txt2);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.13s;
+  white-space: nowrap;
+}
+.comp-chip:hover { border-color: var(--copper); color: var(--copper2); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(212,133,74,.2); }
+.comp-chip .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+/* Component info popup */
+#comp-popup {
+  position: absolute;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15,19,24,.95);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txt);
+  pointer-events: none;
+  display: none;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 32px rgba(0,0,0,.5);
+  white-space: nowrap;
+  z-index: 5;
+}
+#comp-popup.visible { display: block; }
+#comp-popup .comp-name { color: var(--copper2); font-weight: 700; margin-bottom: 3px; }
+#comp-popup .comp-pin { color: var(--teal); }
+#comp-popup .comp-state { color: var(--green); }
+
+/* Axis helper label */
+#axis-label {
+  position: absolute;
+  bottom: 14px;
+  left: 14px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--txt3);
+  pointer-events: none;
+  line-height: 1.6;
+}
+
+/* ── EDITOR PANEL ── */
+#editor-panel {
+  grid-area: editor;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.editor-header {
+  height: 34px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.editor-tab {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txt3);
+  padding: 3px 10px;
+  border-radius: 4px 4px 0 0;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.12s;
+}
+.editor-tab.active { color: var(--txt); border-bottom-color: var(--teal2); }
+.editor-tab:hover { color: var(--txt2); }
+
+.file-name {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--txt3);
+}
+.file-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--yellow);
+  display: none;
+}
+.file-dot.dirty { display: block; }
+
+/* Code editor wrapper */
+.code-wrapper {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+  min-height: 0;
+}
+#line-nums {
+  width: 44px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 12px 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--txt3);
+  text-align: right;
+  overflow: hidden;
+  user-select: none;
+  flex-shrink: 0;
+}
+.ln { padding: 0 8px; height: 20px; }
+.ln.active { color: var(--txt2); }
+
+/* Two-layer syntax highlight */
+#hl-layer {
+  position: absolute;
+  inset: 0;
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: pre;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+  color: #abb2bf;
+  background: #1e2432;
+  tab-size: 2;
+}
+/* syntax classes */
+#hl-layer .K  { color: #c678dd; }
+#hl-layer .F  { color: #61afef; }
+#hl-layer .N  { color: #d19a66; }
+#hl-layer .S  { color: #98c379; }
+#hl-layer .C  { color: #5c6370; font-style: italic; }
+#hl-layer .P  { color: #e06c75; }
+#hl-layer .T  { color: #56b6c2; }
+#hl-layer .V  { color: #e5c07b; }
+
+#code-area {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: #aeafad;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 20px;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 12px 14px;
+  white-space: pre;
+  overflow: auto;
+  z-index: 2;
+  tab-size: 2;
+  spellcheck: false;
+}
+
+/* Error line highlight — injected dynamically */
+.err-line-bg { background: rgba(248,81,73,.07) !important; }
+.warn-line-bg { background: rgba(227,179,65,.05) !important; }
+
+/* ── CONSOLE PANEL ── */
+#console-panel {
+  grid-area: console;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.console-header {
+  height: 30px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.c-tab {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--txt3);
+  padding: 2px 9px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.12s;
+  border-bottom: 2px solid transparent;
+}
+.c-tab.active { color: var(--txt); border-bottom-color: var(--copper); }
+.c-tab:hover { color: var(--txt2); }
+.cbadge {
+  display: none;
+  margin-left: 2px;
+  background: var(--red);
+  color: #fff;
+  border-radius: 8px;
+  font-size: 8px;
+  padding: 1px 5px;
+  font-family: var(--mono);
+}
+.cbadge.show { display: inline-block; }
+
+.c-actions { margin-left: auto; display: flex; gap: 5px; align-items: center; }
+.c-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--txt3);
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: none;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.c-btn:hover { color: var(--txt); border-color: var(--border2); }
+.c-btn.active { color: var(--teal); border-color: rgba(57,208,196,.4); }
+
+#log-output {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 18px;
+  background: #0d1117;
+}
+.log-ok   { color: var(--green); }
+.log-err  { color: var(--red); }
+.log-warn { color: var(--yellow); }
+.log-info { color: var(--blue); }
+.log-dim  { color: var(--txt3); }
+.log-sys  { color: var(--copper); }
+.log-norm { color: var(--txt2); }
+
+/* ── STATUS BARS ── */
+#status-left {
+  grid-area: statusL;
+  background: var(--teal2);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: rgba(0,20,20,.85);
+  font-weight: 600;
+}
+#status-right {
+  grid-area: statusR;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--txt3);
+  justify-content: flex-end;
+}
+.sb-sep { opacity: 0.4; }
+
+/* scrollbars */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--txt3); }
+
+/* Loading overlay */
+#loader {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  gap: 18px;
+  transition: opacity 0.5s;
+}
+#loader.hidden { opacity: 0; pointer-events: none; }
+.loader-logo { font-family: var(--mono); font-size: 24px; color: var(--copper2); letter-spacing: 0.1em; }
+.loader-sub { font-family: var(--mono); font-size: 11px; color: var(--txt3); }
+.loader-bar-wrap { width: 200px; height: 2px; background: var(--border); border-radius: 1px; }
+.loader-bar { height: 100%; width: 0%; background: var(--teal); border-radius: 1px; transition: width 0.3s ease; }
+</style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="loader">
+  <div class="loader-logo">⚡ GEN ALPHA ESP32</div>
+  <div class="loader-sub">Initialising 3D engine…</div>
+  <div class="loader-bar-wrap"><div class="loader-bar" id="lbar"></div></div>
+</div>
+
+<div id="app">
+
+  <!-- ══ TOOLBAR ══ -->
+  <div id="toolbar">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div>
+        <div class="brand-name">GEN ALPHA ESP32</div>
+        <div class="brand-sub">3D CIRCUIT STUDIO</div>
+      </div>
+    </div>
+
+    <div class="tsep"></div>
+
+    <button class="tbtn primary" id="btn-verify" onclick="apiVerify()" title="Ctrl+R">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      Verify
+    </button>
+    <button class="tbtn" id="btn-upload" onclick="apiUpload()" title="Ctrl+U">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+      Upload
+    </button>
+
+    <div class="tsep"></div>
+
+    <select class="tselect" id="board-sel" onchange="onBoardChange(this.value)">
+      <option value="esp32">ESP32 Dev Module</option>
+      <option value="esp32s3">ESP32-S3</option>
+      <option value="uno">Uno CH340G</option>
+      <option value="nano">Arduino Nano</option>
+    </select>
+
+    <select class="tselect" id="example-sel" onchange="loadExample(this.value)">
+      <option value="">── Load Example ──</option>
+      <option value="blink">Basic → Blink LED</option>
+      <option value="wifi">Network → WiFi Scanner</option>
+      <option value="servo">Actuator → Servo Sweep</option>
+      <option value="dht11">Sensor → DHT11 Temp</option>
+      <option value="oled">Display → OLED SSD1306</option>
+      <option value="ultrasonic">Sensor → HC-SR04</option>
+      <option value="pot">Basic → Potentiometer ADC</option>
+    </select>
+
+    <div class="tsep"></div>
+
+    <button class="tbtn" onclick="toggleSim()" id="btn-sim" title="Space">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      Run Sim
+    </button>
+    <button class="tbtn danger" onclick="clearBoard()" title="Clear all components">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="13" height="13"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+      Clear
+    </button>
+
+    <div id="sim-status-badge">
+      <div class="pulse"></div>
+      <span id="sim-state-txt">IDLE</span>
+    </div>
+  </div>
+
+  <!-- ══ 3D VIEWPORT ══ -->
+  <div id="sim-area">
+    <canvas id="three-canvas"></canvas>
+    <div id="sim-overlay">
+      <!-- Component add toolbar -->
+      <div id="comp-toolbar">
+        <div class="comp-chip" onclick="addComponent('led_r')" title="Add Red LED"><span class="dot" style="background:#ef5350"></span>LED R</div>
+        <div class="comp-chip" onclick="addComponent('led_g')" title="Add Green LED"><span class="dot" style="background:#4caf50"></span>LED G</div>
+        <div class="comp-chip" onclick="addComponent('led_b')" title="Add Blue LED"><span class="dot" style="background:#42a5f5"></span>LED B</div>
+        <div class="comp-chip" onclick="addComponent('btn')" title="Push Button"><span class="dot" style="background:#78909c"></span>Button</div>
+        <div class="comp-chip" onclick="addComponent('res')" title="Resistor"><span class="dot" style="background:#d4854a"></span>Resistor</div>
+        <div class="comp-chip" onclick="addComponent('dht11')" title="DHT11 Sensor"><span class="dot" style="background:#66bb6a"></span>DHT11</div>
+        <div class="comp-chip" onclick="addComponent('servo')" title="Servo Motor"><span class="dot" style="background:#ff9800"></span>Servo</div>
+        <div class="comp-chip" onclick="addComponent('oled')" title="OLED Display"><span class="dot" style="background:#ab47bc"></span>OLED</div>
+        <div class="comp-chip" onclick="addComponent('ultrasonic')" title="HC-SR04"><span class="dot" style="background:#42a5f5"></span>HC-SR04</div>
+        <div class="comp-chip" onclick="addComponent('pot')" title="Potentiometer"><span class="dot" style="background:#ff9800"></span>Pot</div>
+        <div class="comp-chip" onclick="addComponent('buzzer')" title="Buzzer"><span class="dot" style="background:#ffcc02"></span>Buzzer</div>
+        <div class="comp-chip" onclick="addComponent('relay')" title="Relay Module"><span class="dot" style="background:#ce93d8"></span>Relay</div>
+      </div>
+
+      <!-- Camera controls -->
+      <div id="cam-controls">
+        <button class="cam-btn" onclick="resetCamera()" title="Reset view">⌖</button>
+        <button class="cam-btn" onclick="camTop()" title="Top view">⊤</button>
+        <button class="cam-btn" onclick="camFront()" title="Front view">▣</button>
+      </div>
+
+      <!-- Component hover popup -->
+      <div id="comp-popup">
+        <div class="comp-name" id="popup-name">LED (Red)</div>
+        <div class="comp-pin" id="popup-pin">GPIO: 2</div>
+        <div class="comp-state" id="popup-state">State: OFF</div>
+        <div style="color: var(--txt3); font-size:10px; margin-top:3px">Click: Select · Drag: Move · Del: Remove</div>
+      </div>
+
+      <!-- Axis info -->
+      <div id="axis-label">
+        🖱 Drag: Orbit · Scroll: Zoom · Right-drag: Pan
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ CODE EDITOR ══ -->
+  <div id="editor-panel">
+    <div class="editor-header">
+      <div class="editor-tab active">sketch.ino</div>
+      <div class="file-dot" id="dirty-dot"></div>
+      <div class="file-name" id="file-name">sketch.ino</div>
+    </div>
+    <div class="code-wrapper" id="code-wrapper">
+      <div id="line-nums"></div>
+      <div style="flex:1;position:relative;overflow:hidden">
+        <pre id="hl-layer" aria-hidden="true"></pre>
+        <textarea id="code-area"
+          spellcheck="false"
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+          oninput="onCodeInput()"
+          onscroll="syncScroll(this)"
+          onkeydown="onKeyDown(event)"
+          onmouseup="updateCursor()"
+          onkeyup="updateCursor()">
+        </textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ CONSOLE ══ -->
+  <div id="console-panel">
+    <div class="console-header">
+      <div class="c-tab active" id="tab-serial" onclick="setConsoleTab('serial')">
+        Serial <span class="cbadge" id="badge-serial">!</span>
+      </div>
+      <div class="c-tab" id="tab-compiler" onclick="setConsoleTab('compiler')">
+        Compiler <span class="cbadge" id="badge-compiler">!</span>
+      </div>
+      <div class="c-tab" id="tab-diag" onclick="setConsoleTab('diag')">
+        Diagnostics <span class="cbadge" id="badge-diag">!</span>
+      </div>
+      <div class="c-actions">
+        <button class="c-btn active" id="autoscroll-btn" onclick="toggleAutoscroll()">↓ Auto</button>
+        <button class="c-btn" onclick="clearConsole()">Clear</button>
+      </div>
+    </div>
+    <div id="log-output"></div>
+  </div>
+
+  <!-- ══ STATUS BARS ══ -->
+  <div id="status-left">
+    <span id="sb-status">Ready</span>
+    <span class="sb-sep">·</span>
+    <span id="sb-cursor">Ln 1, Col 1</span>
+  </div>
+  <div id="status-right">
+    <span id="sb-board">ESP32 Dev Module</span>
+    <span class="sb-sep">·</span>
+    <span>115200 baud</span>
+    <span class="sb-sep">·</span>
+    <span>UTF-8</span>
+    <span class="sb-sep">·</span>
+    <span>Arduino C++</span>
+  </div>
+</div>
+
+<script>
+'use strict';
+// ═══════════════════════════════════════════════════════════════════
+// SECTION 1 — LOADING PROGRESS
+// ═══════════════════════════════════════════════════════════════════
+function setProgress(p) {
+  document.getElementById('lbar').style.width = p + '%';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION 2 — APP STATE
+// Single source of truth. Never mutate DOM directly — mutate state, call render.
+// ═══════════════════════════════════════════════════════════════════
+const STATE = {
+  board: 'esp32',
+  code: '',
+  dirty: false,
+  busy: false,
+  simRunning: false,
+  simTick: 0,
+  simInterval: null,
+  consoleTab: 'serial',
+  logs: { serial: [], compiler: [], diag: [] },
+  autoscroll: true,
+  components: [],    // [{id, type, gpio, mesh, state, ...}]
+  selectedId: null,
+  nextId: 1,
+  codeToCompSync: true,  // code changes update components
+  compToCodeSync: true,  // component changes update code
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION 3 — COMPONENT DEFINITIONS
+// Each type defines its visual appearance and code template
+// ═══════════════════════════════════════════════════════════════════
+const COMP_DEFS = {
+  led_r:      { label:'LED (Red)',       color:0xef5350, gpio:'2',  w:0.3, h:0.5, d:0.3, codeKey:'LED_R',        cMode:'OUTPUT' },
+  led_g:      { label:'LED (Green)',     color:0x4caf50, gpio:'4',  w:0.3, h:0.5, d:0.3, codeKey:'LED_G',        cMode:'OUTPUT' },
+  led_b:      { label:'LED (Blue)',      color:0x42a5f5, gpio:'5',  w:0.3, h:0.5, d:0.3, codeKey:'LED_B',        cMode:'OUTPUT' },
+  btn:        { label:'Push Button',     color:0x455a64, gpio:'0',  w:0.4, h:0.2, d:0.4, codeKey:'BTN',          cMode:'INPUT_PULLUP' },
+  res:        { label:'Resistor 220Ω',   color:0xd4854a, gpio:null, w:0.6, h:0.2, d:0.15,codeKey:'RES',          cMode:null },
+  dht11:      { label:'DHT11 Sensor',    color:0x1a7a4a, gpio:'4',  w:0.5, h:0.6, d:0.2, codeKey:'DHT',          cMode:'INPUT', lib:'DHT.h' },
+  servo:      { label:'Servo Motor',     color:0x37474f, gpio:'18', w:0.6, h:0.5, d:0.4, codeKey:'SERVO',        cMode:'OUTPUT', lib:'ESP32Servo.h' },
+  oled:       { label:'OLED 128×64',    color:0x1a0030, gpio:'21', w:0.8, h:0.55,d:0.15, codeKey:'OLED',         cMode:null, lib:'Adafruit_SSD1306.h' },
+  ultrasonic: { label:'HC-SR04',         color:0x1565c0, gpio:'12', w:0.8, h:0.35,d:0.45, codeKey:'ULTRA',        cMode:'OUTPUT' },
+  pot:        { label:'Potentiometer',   color:0xb45309, gpio:'32', w:0.45,h:0.45,d:0.45, codeKey:'POT',          cMode:'INPUT' },
+  buzzer:     { label:'Buzzer',          color:0x212121, gpio:'25', w:0.35,h:0.3, d:0.35, codeKey:'BUZZER',       cMode:'OUTPUT' },
+  relay:      { label:'Relay 5V',        color:0x1a237e, gpio:'26', w:0.7, h:0.4, d:0.45, codeKey:'RELAY',        cMode:'OUTPUT' },
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION 4 — THREE.JS 3D ENGINE
+// Photorealistic PCB render using Three.js PBR materials
+// ═══════════════════════════════════════════════════════════════════
+let THREE_SCENE, THREE_CAMERA, THREE_RENDERER, THREE_CONTROLS_ACTIVE;
+let PCB_GROUP;             // root group for the PCB + all components
+let RAYCASTER, MOUSE_VEC;  // for click/hover picking
+let DRAG_STATE = null;     // {object, plane, offset}
+let HOVER_MESH = null;
+
+// Materials — defined once, shared
+const MATS = {};
+
+function initThree() {
+  const canvas = document.getElementById('three-canvas');
+  const container = document.getElementById('sim-area');
+
+  // Renderer
+  THREE_RENDERER = new THREE.WebGLRenderer({
+    canvas,
+    antialias: true,
+    alpha: false,
+    powerPreference: 'default', // not 'high-performance' — saves battery on tablet
+  });
+  THREE_RENDERER.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // cap for 8GB RAM
+  THREE_RENDERER.shadowMap.enabled = true;
+  THREE_RENDERER.shadowMap.type = THREE.PCFSoftShadowMap;
+  THREE_RENDERER.outputEncoding = THREE.sRGBEncoding;
+  THREE_RENDERER.toneMapping = THREE.ACESFilmicToneMapping;
+  THREE_RENDERER.toneMappingExposure = 1.2;
+  setProgress(30);
+
+  // Camera — perspective, eye-level over the PCB
+  THREE_CAMERA = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
+  THREE_CAMERA.position.set(0, 6, 8);
+  THREE_CAMERA.lookAt(0, 0, 0);
+
+  // Scene
+  THREE_SCENE = new THREE.Scene();
+  THREE_SCENE.background = new THREE.Color(0x0a0c0f);
+  THREE_SCENE.fog = new THREE.Fog(0x0a0c0f, 20, 50);
+
+  // Lighting — PBR-quality
+  buildLighting();
+  setProgress(50);
+
+  // Materials
+  buildMaterials();
+  setProgress(60);
+
+  // PCB board
+  PCB_GROUP = new THREE.Group();
+  THREE_SCENE.add(PCB_GROUP);
+  buildPCB();
+  setProgress(75);
+
+  // Grid / ground
+  buildGround();
+
+  // Raycaster for component picking
+  RAYCASTER = new THREE.Raycaster();
+  MOUSE_VEC = new THREE.Vector2();
+
+  // Resize handler
+  resizeRenderer();
+  window.addEventListener('resize', resizeRenderer);
+
+  // Orbit controls (manual — no OrbitControls dependency)
+  initOrbitControls(canvas);
+  setProgress(90);
+
+  // Render loop — requestAnimationFrame keeps it running until page close
+  animate();
+}
+
+function buildLighting() {
+  // Ambient — fills shadows softly
+  const ambient = new THREE.AmbientLight(0x223344, 0.8);
+  THREE_SCENE.add(ambient);
+
+  // Key light — main directional (simulates overhead lab light)
+  const key = new THREE.DirectionalLight(0xfff8f0, 2.2);
+  key.position.set(4, 10, 6);
+  key.castShadow = true;
+  key.shadow.mapSize.width = 1024;   // 1024 = good balance for 8GB RAM
+  key.shadow.mapSize.height = 1024;
+  key.shadow.camera.near = 0.1;
+  key.shadow.camera.far = 30;
+  key.shadow.camera.left = -6;
+  key.shadow.camera.right = 6;
+  key.shadow.camera.top = 6;
+  key.shadow.camera.bottom = -6;
+  key.shadow.radius = 2;
+  key.shadow.bias = -0.001;
+  THREE_SCENE.add(key);
+
+  // Fill light — left side, cooler
+  const fill = new THREE.DirectionalLight(0x4488cc, 0.5);
+  fill.position.set(-5, 5, -3);
+  THREE_SCENE.add(fill);
+
+  // Rim light — back edge highlight
+  const rim = new THREE.DirectionalLight(0x002244, 0.3);
+  rim.position.set(0, -3, -6);
+  THREE_SCENE.add(rim);
+
+  // Point lights for LED glow — managed dynamically in SECTION 7
+}
+
+function buildMaterials() {
+  // PCB substrate — FR4 green
+  MATS.pcb = new THREE.MeshStandardMaterial({
+    color: 0x0f5132,
+    roughness: 0.6,
+    metalness: 0.0,
+    envMapIntensity: 0.5,
+  });
+
+  // PCB surface — slight sheen like solder mask
+  MATS.pcbSurface = new THREE.MeshStandardMaterial({
+    color: 0x1a7a4a,
+    roughness: 0.4,
+    metalness: 0.05,
+  });
+
+  // Copper traces / pads
+  MATS.copper = new THREE.MeshStandardMaterial({
+    color: 0xc8860a,
+    roughness: 0.3,
+    metalness: 0.9,
+  });
+
+  // Solder / silver
+  MATS.solder = new THREE.MeshStandardMaterial({
+    color: 0xc0c0c0,
+    roughness: 0.4,
+    metalness: 0.85,
+  });
+
+  // Silkscreen (white text layer)
+  MATS.silk = new THREE.MeshStandardMaterial({
+    color: 0xe8e8dc,
+    roughness: 0.95,
+    metalness: 0.0,
+  });
+
+  // ESP32 module — dark metallic
+  MATS.module = new THREE.MeshStandardMaterial({
+    color: 0x1a2030,
+    roughness: 0.35,
+    metalness: 0.5,
+  });
+
+  // Module top sheen
+  MATS.moduleSheen = new THREE.MeshStandardMaterial({
+    color: 0x263050,
+    roughness: 0.2,
+    metalness: 0.6,
+  });
+
+  // Black plastic (buttons, IC bodies)
+  MATS.blackPlastic = new THREE.MeshStandardMaterial({
+    color: 0x0d1117,
+    roughness: 0.7,
+    metalness: 0.05,
+  });
+
+  // USB connector metal
+  MATS.metal = new THREE.MeshStandardMaterial({
+    color: 0x708090,
+    roughness: 0.3,
+    metalness: 0.95,
+  });
+
+  // LED — emissive materials created per-color dynamically
+}
+
+function buildPCB() {
+  const W = 4.0, H = 6.5, T = 0.15;
+
+  // Main PCB body
+  const pcbGeo = new THREE.BoxGeometry(W, T, H);
+  const pcb = new THREE.Mesh(pcbGeo, MATS.pcbSurface);
+  pcb.receiveShadow = true;
+  pcb.castShadow = true;
+  pcb.position.y = 0;
+  PCB_GROUP.add(pcb);
+
+  // Edge chamfer simulation via slightly larger darker box underneath
+  const edgeGeo = new THREE.BoxGeometry(W + 0.02, T * 0.7, H + 0.02);
+  const edge = new THREE.Mesh(edgeGeo, MATS.pcb);
+  edge.position.y = -T * 0.15;
+  PCB_GROUP.add(edge);
+
+  // ── ESP32 module (die-cast metallic block) ──
+  const modW = 2.2, modH = 0.3, modD = 1.5;
+  const modGeo = new THREE.BoxGeometry(modW, modH, modD);
+  const mod = new THREE.Mesh(modGeo, MATS.module);
+  mod.castShadow = true;
+  mod.position.set(0, T / 2 + modH / 2, -0.5);
+  PCB_GROUP.add(mod);
+
+  // Module metal shield top plate
+  const shieldGeo = new THREE.BoxGeometry(modW - 0.05, 0.02, modD - 0.05);
+  const shield = new THREE.Mesh(shieldGeo, MATS.moduleSheen);
+  shield.position.set(0, T / 2 + modH + 0.01, -0.5);
+  PCB_GROUP.add(shield);
+
+  // Silkscreen label on module
+  addLabel('ESP32-WROOM-32', 0, T / 2 + modH / 2 + 0.001, -0.5, 0.18, 0.2);
+
+  // ── WiFi antenna trace (copper zigzag) ──
+  buildAntennaTrace(modW / 2 + 0.05, T / 2, -0.5);
+
+  // ── GPIO pins — left side ──
+  const leftPins = ['3V3','GND','D15','D2','D4','RX2','TX2','D5','D18','D19','D21','RX0','TX0','D22','D23'];
+  leftPins.forEach((name, i) => {
+    const py = -H / 2 + 0.8 + i * 0.35;
+    buildPin(-W / 2 - 0.05, T / 2 + 0.05, py, name, i);
+  });
+
+  // ── GPIO pins — right side ──
+  const rightPins = ['D13','D12','D14','D27','D26','D25','D33','D32','D35','D34','VN','VP','EN','GND','VIN'];
+  rightPins.forEach((name, i) => {
+    const py = -H / 2 + 0.8 + i * 0.35;
+    buildPin(W / 2 + 0.05, T / 2 + 0.05, py, name, i);
+  });
+
+  // ── USB connector ──
+  buildUSB(0, T / 2, H / 2 - 0.3);
+
+  // ── Boot + EN buttons ──
+  buildTactButton(-W / 2 + 0.4, T / 2 + 0.12, H / 2 - 0.6, 'EN');
+  buildTactButton( W / 2 - 0.4, T / 2 + 0.12, H / 2 - 0.6, 'BOOT');
+
+  // ── GPIO2 LED (built-in) ──
+  buildOnboardLED(-W / 2 + 0.6, T / 2 + 0.04, H / 2 - 1.1, 'LED');
+
+  // ── Power LED ──
+  buildOnboardLED(-W / 2 + 1.0, T / 2 + 0.04, H / 2 - 1.1, 'PWR', 0xff3300, true);
+
+  // ── Copper via dots (decorative) ──
+  for (let i = 0; i < 8; i++) {
+    const x = (Math.random() - 0.5) * (W - 0.6);
+    const z = (Math.random() - 0.5) * (H - 1.0);
+    const viaGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.005, 8);
+    const via = new THREE.Mesh(viaGeo, MATS.copper);
+    via.rotation.x = Math.PI / 2;
+    via.position.set(x, T / 2 + 0.003, z);
+    PCB_GROUP.add(via);
+  }
+
+  // ── Board label ──
+  addLabel('GEN ALPHA ESP32 DEV MODULE', 0, T / 2 + 0.001, H / 2 - 0.2, 0.11, 0.5);
+  addLabel('PCB v3.1  FR4  2L', 0, T / 2 + 0.001, H / 2 - 0.35, 0.09, 0.5);
+
+  PCB_GROUP.position.y = 0;
+}
+
+function buildPin(x, y, z, name, idx) {
+  // Header pin — copper post
+  const pinGeo = new THREE.BoxGeometry(0.08, 0.25, 0.08);
+  const pin = new THREE.Mesh(pinGeo, MATS.copper);
+  pin.castShadow = true;
+  pin.position.set(x, y + 0.12, z);
+  PCB_GROUP.add(pin);
+
+  // Plastic housing strip
+  const houseGeo = new THREE.BoxGeometry(0.12, 0.13, 0.09);
+  const house = new THREE.Mesh(houseGeo, MATS.blackPlastic);
+  house.position.set(x, y + 0.07, z);
+  PCB_GROUP.add(house);
+
+  // Tiny label
+  if (idx % 3 === 0) addLabel(name, x + (x < 0 ? 0.25 : -0.25), y + 0.15, z, 0.07, 0, true);
+}
+
+function buildAntennaTrace(startX, y, z) {
+  const pts = [];
+  for (let i = 0; i <= 8; i++) {
+    const sign = i % 2 === 0 ? 1 : -1;
+    pts.push(new THREE.Vector3(startX + i * 0.08, y + 0.001, z + sign * 0.15));
+  }
+  const curve = new THREE.CatmullRomCurve3(pts);
+  const geo = new THREE.TubeGeometry(curve, 20, 0.01, 4, false);
+  const ant = new THREE.Mesh(geo, MATS.copper);
+  ant.position.y = 0;
+  PCB_GROUP.add(ant);
+}
+
+function buildUSB(x, y, z) {
+  // Housing
+  const houseGeo = new THREE.BoxGeometry(0.9, 0.35, 0.38);
+  const house = new THREE.Mesh(houseGeo, MATS.metal);
+  house.castShadow = true;
+  house.position.set(x, y + 0.18, z);
+  PCB_GROUP.add(house);
+
+  // Interior recess
+  const recessGeo = new THREE.BoxGeometry(0.7, 0.22, 0.05);
+  const recess = new THREE.Mesh(recessGeo, MATS.blackPlastic);
+  recess.position.set(x, y + 0.18, z + 0.19);
+  PCB_GROUP.add(recess);
+
+  // Contact pads (gold)
+  for (let i = 0; i < 4; i++) {
+    const padGeo = new THREE.BoxGeometry(0.06, 0.04, 0.08);
+    const pad = new THREE.Mesh(padGeo, MATS.copper);
+    pad.position.set(x - 0.15 + i * 0.1, y + 0.18, z + 0.15);
+    PCB_GROUP.add(pad);
+  }
+
+  addLabel('USB', x, y + 0.37, z, 0.09, 0, false);
+}
+
+function buildTactButton(x, y, z, label) {
+  // Body
+  const bodyGeo = new THREE.BoxGeometry(0.25, 0.12, 0.25);
+  const body = new THREE.Mesh(bodyGeo, MATS.blackPlastic);
+  body.castShadow = true;
+  body.position.set(x, y, z);
+  PCB_GROUP.add(body);
+
+  // Cap — slightly raised, blue tint
+  const capGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.06, 8);
+  const capMat = new THREE.MeshStandardMaterial({ color: 0x1565c0, roughness: 0.5, metalness: 0.1 });
+  const cap = new THREE.Mesh(capGeo, capMat);
+  cap.position.set(x, y + 0.09, z);
+  cap.castShadow = true;
+  PCB_GROUP.add(cap);
+
+  addLabel(label, x, y + 0.19, z, 0.08, 0, false);
+}
+
+function buildOnboardLED(x, y, z, label, color = 0x00ff44, alwaysOn = false) {
+  const ledGeo = new THREE.SphereGeometry(0.055, 8, 6);
+  const mat = new THREE.MeshStandardMaterial({
+    color: color,
+    roughness: 0.3,
+    metalness: 0.0,
+    emissive: alwaysOn ? new THREE.Color(color) : new THREE.Color(0x000000),
+    emissiveIntensity: alwaysOn ? 0.8 : 0,
+  });
+  const led = new THREE.Mesh(ledGeo, mat);
+  led.castShadow = false;
+  led.position.set(x, y + 0.055, z);
+  PCB_GROUP.add(led);
+
+  if (alwaysOn) {
+    const light = new THREE.PointLight(color, 0.3, 0.5);
+    light.position.set(x, y + 0.1, z);
+    PCB_GROUP.add(light);
+  }
+
+  addLabel(label, x, y + 0.14, z, 0.07, 0, false);
+
+  // Store reference for GPIO2 blinking
+  if (label === 'LED') PCB_GROUP.userData.gpio2LED = { mesh: led, mat };
+}
+
+function addLabel(text, x, y, z, size, maxWidth, rightAlign = false) {
+  // Minimal silk-screen label using a flat plane with canvas texture
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 32;
+  ctx.clearRect(0, 0, 256, 32);
+  ctx.fillStyle = '#e8e8dc';
+  ctx.font = `bold ${size > 0.12 ? 14 : 10}px monospace`;
+  ctx.textAlign = rightAlign ? 'right' : 'center';
+  ctx.fillText(text, rightAlign ? 250 : 128, 22);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  const geo = new THREE.PlaneGeometry(maxWidth || 0.4, 0.06);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(x, y + 0.001, z);
+  PCB_GROUP.add(mesh);
+}
+
+function buildGround() {
+  // Subtle reflective ground plane
+  const geo = new THREE.PlaneGeometry(30, 30);
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x050708,
+    roughness: 0.9,
+    metalness: 0.1,
+  });
+  const ground = new THREE.Mesh(geo, mat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.5;
+  ground.receiveShadow = true;
+  THREE_SCENE.add(ground);
+
+  // Grid overlay
+  const grid = new THREE.GridHelper(20, 40, 0x1e2d3d, 0x1a2535);
+  grid.position.y = -0.48;
+  THREE_SCENE.add(grid);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION 5 — COMPONENT 3D OBJECTS
+// Each component type gets a realistic 3D shape
+// ═══════════════════════════════════════════════════════════════════
+
+// Active point lights for LEDs (added/removed as LEDs are placed/removed)
+const LED_LIGHTS = new Map(); // compId → PointLight
+
+function buildComponentMesh(type) {
+  const def = COMP_DEFS[type];
+  const group = new THREE.Group();
+
+  switch(type) {
+    case 'led_r': case 'led_g': case 'led_b': {
+      // LED body — transparent dome with legs
+      const domeGeo = new THREE.SphereGeometry(0.14, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.6);
+      const bodyColor = def.color;
+      const ledMat = new THREE.MeshStandardMaterial({
+        color: bodyColor,
+        roughness: 0.15,
+        metalness: 0.0,
+        transparent: true,
+        opacity: 0.85,
+        emissive: new THREE.Color(bodyColor),
+        emissiveIntensity: 0.0,
+      });
+      const dome = new THREE.Mesh(domeGeo, ledMat);
+      dome.castShadow = true;
+      dome.position.y = 0.2;
+      group.add(dome);
+      group.userData.ledMat = ledMat;
+      group.userData.ledColor = bodyColor;
+
+      // Flat base
+      const baseGeo = new THREE.CylinderGeometry(0.14, 0.14, 0.08, 12);
+      const base = new THREE.Mesh(baseGeo, new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.7 }));
+      base.position.y = 0.08;
+      group.add(base);
+
+      // Legs
+      [-0.05, 0.05].forEach((ox, i) => {
+        const legGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.35, 6);
+        const leg = new THREE.Mesh(legGeo, MATS.solder);
+        leg.position.set(ox, -0.15, 0);
+        group.add(leg);
+      });
+      break;
+    }
+
+    case 'btn': {
+      // Push button body
+      const bodyGeo = new THREE.BoxGeometry(0.38, 0.16, 0.38);
+      const body = new THREE.Mesh(bodyGeo, MATS.blackPlastic);
+      body.castShadow = true;
+      body.position.y = 0.08;
+      group.add(body);
+
+      // Cap
+      const capGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.08, 10);
+      const capMat = new THREE.MeshStandardMaterial({ color: 0x607d8b, roughness: 0.5 });
+      const cap = new THREE.Mesh(capGeo, capMat);
+      cap.position.y = 0.2;
+      cap.castShadow = true;
+      group.add(cap);
+      group.userData.cap = cap;
+      group.userData.capRestY = 0.2;
+
+      // 4 legs
+      [[-0.12,-0.12],[0.12,-0.12],[-0.12,0.12],[0.12,0.12]].forEach(([ox,oz]) => {
+        const legGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.2, 6);
+        const leg = new THREE.Mesh(legGeo, MATS.solder);
+        leg.position.set(ox, -0.05, oz);
+        group.add(leg);
+      });
+      break;
+    }
+
+    case 'res': {
+      // Resistor body
+      const bodyGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.45, 10);
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0xd4854a, roughness: 0.6 });
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      body.rotation.z = Math.PI / 2;
+      body.castShadow = true;
+      body.position.y = 0.1;
+      group.add(body);
+
+      // Color bands
+      const bandColors = [0xef5350, 0x212121, 0xff9800, 0xc8860a];
+      bandColors.forEach((c, i) => {
+        const bandGeo = new THREE.CylinderGeometry(0.075, 0.075, 0.04, 10);
+        const bandMat = new THREE.MeshStandardMaterial({ color: c, roughness: 0.5 });
+        const band = new THREE.Mesh(bandGeo, bandMat);
+        band.rotation.z = Math.PI / 2;
+        band.position.set(-0.13 + i * 0.1, 0.1, 0);
+        group.add(band);
+      });
+
+      // Leads
+      [-0.31, 0.31].forEach(ox => {
+        const leadGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.2, 6);
+        const lead = new THREE.Mesh(leadGeo, MATS.solder);
+        lead.rotation.z = Math.PI / 2;
+        lead.position.set(ox, 0.1, 0);
+        group.add(lead);
+      });
+      break;
+    }
+
+    case 'dht11': {
+      const bodyGeo = new THREE.BoxGeometry(0.45, 0.55, 0.18);
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1a7a4a, roughness: 0.55 });
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      body.castShadow = true;
+      body.position.y = 0.28;
+      group.add(body);
+
+      // Mesh grille (humidity sensor holes)
+      const grilleMat = new THREE.MeshStandardMaterial({ color: 0x0d3d20, roughness: 0.8 });
+      for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) {
+        const holeGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.1, 6);
+        const hole = new THREE.Mesh(holeGeo, grilleMat);
+        hole.rotation.z = Math.PI / 2;
+        hole.position.set(-0.08 + c * 0.08, 0.35 + r * 0.06, 0.06);
+        group.add(hole);
+      }
+
+      // Label
+      addCanvasLabel(group, 'DHT11', 0, 0.2, 0.1);
+
+      // Pins
+      [0, 0.12, 0.24].forEach((ox, i) => {
+        const pinGeo = new THREE.CylinderGeometry(0.013, 0.013, 0.3, 6);
+        const pin = new THREE.Mesh(pinGeo, MATS.solder);
+        pin.position.set(-0.12 + ox, 0.0, 0);
+        group.add(pin);
+      });
+      break;
+    }
+
+    case 'servo': {
+      // Main body
+      const bodyGeo = new THREE.BoxGeometry(0.6, 0.45, 0.38);
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x37474f, roughness: 0.5, metalness: 0.15 });
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      body.castShadow = true;
+      body.position.y = 0.23;
+      group.add(body);
+
+      // Mounting ears
+      [-0.36, 0.36].forEach(ox => {
+        const earGeo = new THREE.BoxGeometry(0.12, 0.32, 0.38);
+        const ear = new THREE.Mesh(earGeo, bodyMat);
+        ear.position.set(ox, 0.23, 0);
+        group.add(ear);
+      });
+
+      // Hub disc
+      const hubGeo = new THREE.CylinderGeometry(0.13, 0.13, 0.08, 12);
+      const hubMat = new THREE.MeshStandardMaterial({ color: 0x90a4ae, roughness: 0.3, metalness: 0.6 });
+      const hub = new THREE.Mesh(hubGeo, hubMat);
+      hub.position.set(0.15, 0.47, 0);
+      group.add(hub);
+
+      // Horn arm
+      const hornGeo = new THREE.BoxGeometry(0.35, 0.04, 0.06);
+      const hornMat = new THREE.MeshStandardMaterial({ color: 0xeceff1, roughness: 0.5 });
+      const horn = new THREE.Mesh(hornGeo, hornMat);
+      horn.position.set(0.25, 0.52, 0);
+      group.add(horn);
+      group.userData.horn = horn;
+      group.userData.hornAngle = 0;
+
+      // Wire bundle
+      [0.06, 0.1, 0.14].forEach(ox => {
+        const wGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.45, 4);
+        const wColors = [0xef5350, 0xb0bec5, 0xff9800];
+        const wMat = new THREE.MeshStandardMaterial({ color: wColors[Math.round(ox * 20) - 1], roughness: 0.8 });
+        const w = new THREE.Mesh(wGeo, wMat);
+        w.position.set(-0.33, 0.1, ox - 0.1);
+        group.add(w);
+      });
+      break;
+    }
+
+    case 'oled': {
+      // PCB
+      const pcbGeo = new THREE.BoxGeometry(0.88, 0.06, 0.55);
+      const pcbMat = new THREE.MeshStandardMaterial({ color: 0x1a0840, roughness: 0.5 });
+      const pcb = new THREE.Mesh(pcbGeo, pcbMat);
+      pcb.position.y = 0.03;
+      pcb.castShadow = true;
+      group.add(pcb);
+
+      // Screen bezel
+      const bezelGeo = new THREE.BoxGeometry(0.78, 0.04, 0.45);
+      const bezelMat = new THREE.MeshStandardMaterial({ color: 0x080818, roughness: 0.3 });
+      const bezel = new THREE.Mesh(bezelGeo, bezelMat);
+      bezel.position.set(0, 0.07, 0);
+      group.add(bezel);
+
+      // Screen (emissive when on)
+      const screenGeo = new THREE.PlaneGeometry(0.65, 0.35);
+      const screenMat = new THREE.MeshStandardMaterial({
+        color: 0x000010,
+        emissive: new THREE.Color(0x000010),
+        emissiveIntensity: 0,
+        roughness: 0.1,
+      });
+      const screen = new THREE.Mesh(screenGeo, screenMat);
+      screen.rotation.x = -Math.PI / 2;
+      screen.position.set(0, 0.09, 0);
+      group.add(screen);
+      group.userData.screenMat = screenMat;
+
+      // 4 header pins
+      [-0.25, -0.1, 0.05, 0.2].forEach(ox => {
+        const pinGeo = new THREE.CylinderGeometry(0.013, 0.013, 0.25, 6);
+        const pin = new THREE.Mesh(pinGeo, MATS.solder);
+        pin.position.set(0.36, -0.08, ox);
+        group.add(pin);
+      });
+      break;
+    }
+
+    case 'ultrasonic': {
+      // Board
+      const boardGeo = new THREE.BoxGeometry(0.88, 0.06, 0.44);
+      const boardMat = new THREE.MeshStandardMaterial({ color: 0x1565c0, roughness: 0.5 });
+      const board = new THREE.Mesh(boardGeo, boardMat);
+      board.position.y = 0.03;
+      board.castShadow = true;
+      group.add(board);
+
+      // Two transducers
+      [-0.22, 0.22].forEach(ox => {
+        const cylGeo = new THREE.CylinderGeometry(0.14, 0.14, 0.22, 16);
+        const cylMat = new THREE.MeshStandardMaterial({ color: 0xbcbcbc, roughness: 0.4, metalness: 0.7 });
+        const cyl = new THREE.Mesh(cylGeo, cylMat);
+        cyl.position.set(ox, 0.14, 0);
+        cyl.rotation.x = Math.PI / 2;
+        cyl.castShadow = true;
+        group.add(cyl);
+
+        // Inner membrane
+        const memGeo = new THREE.CircleGeometry(0.1, 16);
+        const memMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8 });
+        const mem = new THREE.Mesh(memGeo, memMat);
+        mem.position.set(ox, 0.14, -0.12);
+        mem.rotation.x = Math.PI / 2;
+        group.add(mem);
+      });
+
+      // 4 pins
+      [-0.3, -0.1, 0.1, 0.3].forEach(ox => {
+        const pinGeo = new THREE.CylinderGeometry(0.013, 0.013, 0.25, 6);
+        const pin = new THREE.Mesh(pinGeo, MATS.solder);
+        pin.position.set(0.38, 0, ox);
+        group.add(pin);
+      });
+      break;
+    }
+
+    case 'pot': {
+      const bodyGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.2, 12);
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.6 });
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      body.position.y = 0.1;
+      body.castShadow = true;
+      group.add(body);
+
+      // Knob
+      const knobGeo = new THREE.CylinderGeometry(0.14, 0.18, 0.16, 12);
+      const knobMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.4, metalness: 0.3 });
+      const knob = new THREE.Mesh(knobGeo, knobMat);
+      knob.position.y = 0.28;
+      knob.castShadow = true;
+      group.add(knob);
+      group.userData.knob = knob;
+
+      // Indicator line
+      const lineGeo = new THREE.BoxGeometry(0.03, 0.06, 0.15);
+      const lineMat = new THREE.MeshStandardMaterial({ color: 0xe8e8dc, roughness: 0.8 });
+      const line = new THREE.Mesh(lineGeo, lineMat);
+      line.position.set(0, 0.37, 0.1);
+      group.add(line);
+      group.userData.indicator = line;
+
+      // 3 pins
+      [-0.1, 0, 0.1].forEach(ox => {
+        const pinGeo = new THREE.CylinderGeometry(0.013, 0.013, 0.2, 6);
+        const pin = new THREE.Mesh(pinGeo, MATS.solder);
+        pin.position.set(ox, 0.0, 0.15);
+        group.add(pin);
+      });
+      break;
+    }
+
+    case 'buzzer': {
+      const bodyGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.14, 16);
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.5 });
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      body.position.y = 0.07;
+      body.castShadow = true;
+      group.add(body);
+
+      // Vent holes
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        const hGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.05, 6);
+        const hMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
+        const h = new THREE.Mesh(hGeo, hMat);
+        h.position.set(Math.cos(a) * 0.1, 0.14, Math.sin(a) * 0.1);
+        group.add(h);
+      }
+
+      // 2 pins
+      [-0.06, 0.06].forEach(ox => {
+        const pinGeo = new THREE.CylinderGeometry(0.013, 0.013, 0.2, 6);
+        const pin = new THREE.Mesh(pinGeo, MATS.solder);
+        pin.position.set(ox, 0.0, 0);
+        group.add(pin);
+      });
+      break;
+    }
+
+    case 'relay': {
+      const bodyGeo = new THREE.BoxGeometry(0.7, 0.4, 0.44);
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1a237e, roughness: 0.5 });
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      body.position.y = 0.2;
+      body.castShadow = true;
+      group.add(body);
+
+      // Coil bump
+      const coilGeo = new THREE.BoxGeometry(0.32, 0.06, 0.3);
+      const coilMat = new THREE.MeshStandardMaterial({ color: 0x9e9e9e, roughness: 0.4, metalness: 0.6 });
+      const coil = new THREE.Mesh(coilGeo, coilMat);
+      coil.position.set(-0.12, 0.43, 0);
+      group.add(coil);
+
+      // Status LED
+      const sLedGeo = new THREE.SphereGeometry(0.04, 8, 6);
+      const sLedMat = new THREE.MeshStandardMaterial({ color: 0x00e676, emissive: new THREE.Color(0x00e676), emissiveIntensity: 0 });
+      const sLed = new THREE.Mesh(sLedGeo, sLedMat);
+      sLed.position.set(0.2, 0.44, 0);
+      group.add(sLed);
+      group.userData.statusLedMat = sLedMat;
+
+      // Pins
+      [-0.15, 0, 0.15].forEach(oz => {
+        const pGeo = new THREE.CylinderGeometry(0.013, 0.013, 0.25, 6);
+        const p = new THREE.Mesh(pGeo, MATS.solder);
+        p.position.set(0.28, 0.1, oz);
+        group.add(p);
+      });
+      break;
+    }
+
+    default: {
+      // Generic box component
+      const geo = new THREE.BoxGeometry(def.w, def.h, def.d);
+      const mat = new THREE.MeshStandardMaterial({ color: def.color, roughness: 0.5 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true;
+      mesh.position.y = def.h / 2;
+      group.add(mesh);
+    }
+  }
+
+  return group;
+}
+
+// Helper: add canvas-texture label directly to a group
+function addCanvasLabel(group, text, x, y, z) {
+  const c = document.createElement('canvas');
+  const ctx = c.getContext('2d');
+  c.width = 128; c.height = 32;
+  ctx.fillStyle = '#e8e8dc';
+  ctx.font = 'bold 14px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(text, 64, 22);
+  const tex = new THREE.CanvasTexture(c);
+  const geo = new THREE.PlaneGeometry(0.3, 0.08);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(x, y, z);
+  group.add(mesh);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION 6 — COMPONENT MANAGEMENT
+// Add, remove, position, track components
+// ═══════════════════════════════════════════════════════════════════
+let COMP_POSITIONS = {}; // tracks next placement position per type-row
+
+function addComponent(type, opts = {}) {
+  const def = COMP_DEFS[type];
+  if (!def) return;
+
+  const id = STATE.nextId++;
+  const mesh = buildComponentMesh(type);
+
+  // Spread components out from PCB centre
+  const row = Math.floor(STATE.components.length / 3);
+  const col = STATE.components.length % 3;
+  const side = STATE.components.length % 2 === 0 ? -1 : 1;
+  const spreadX = side * (3.5 + col * 0.8);
+  const spreadZ = -2.5 + row * 1.4;
+  mesh.position.set(
+    opts.x !== undefined ? opts.x : spreadX,
+    0.08,
+    opts.z !== undefined ? opts.z : spreadZ
+  );
+  mesh.userData.compId = id;
+  mesh.userData.compType = type;
+
+  // Make children pickable (store compId on every child mesh)
+  mesh.traverse(child => {
+    if (child.isMesh) {
+      child.userData.compId = id;
+      child.userData.compType = type;
+      child.castShadow = true;
+    }
+  });
+
+  THREE_SCENE.add(mesh);
+
+  // Point light for LEDs
+  if (type === 'led_r' || type === 'led_g' || type === 'led_b') {
+    const light = new THREE.PointLight(def.color, 0, 1.5);
+    light.position.copy(mesh.position);
+    light.position.y += 0.4;
+    THREE_SCENE.add(light);
+    LED_LIGHTS.set(id, light);
+  }
+
+  const comp = {
+    id, type, mesh,
+    gpio: opts.gpio || def.gpio,
+    state: false,
+    label: def.label,
+    angle: 0,
+    value: 0,
+  };
+  STATE.components.push(comp);
+
+  sysLog(`➕ ${def.label} added → GPIO ${def.gpio || 'N/A'}`);
+
+  if (STATE.compToCodeSync && !opts.silent) {
+    injectCodeForComponent(comp);
+  }
+
+  return comp;
+}
+
+function removeComponent(id) {
+  const idx = STATE.components.findIndex(c => c.id === id);
+  if (idx === -1) return;
+  const comp = STATE.components[idx];
+
+  // Remove 3D mesh
+  THREE_SCENE.remove(comp.mesh);
+  comp.mesh.traverse(child => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) {
+      if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+      else child.material.dispose();
+    }
+  });
+
+  // Remove LED light
+  if (LED_LIGHTS.has(id)) {
+    THREE_SCENE.remove(LED_LIGHTS.get(id));
+    LED_LIGHTS.delete(id);
+  }
+
+  STATE.components.splice(idx, 1);
+
+  if (STATE.selectedId === id) {
+    STATE.selectedId = null;
+    document.getElementById('comp-popup').classList.remove('visible');
+  }
+
+  sysLog(`🗑 ${comp.label} removed`);
+
+  if (STATE.compToCodeSync) {
+    removeCodeForComponent(comp);
+  }
+}
+
+function clearBoard() {
+  [...STATE.components].forEach(c => {
+    THREE_SCENE.remove(c.mesh);
+    c.mesh.traverse(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) {
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        mats.forEach(m => m.dispose());
+      }
+    });
+    if (LED_LIGHTS.has(c.id)) {
+      THREE_SCENE.remove(LED_LIGHTS.get(c.id));
+      LED_LIGHTS.delete(c.id);
+    }
+  });
+  STATE.components = [];
+  STATE.selectedId = null;
+  document.getElementById('comp-popup').classList.remove('visible');
+  sysLog('🔄 Board cleared');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION 7 — SIMULATION TICK
+// Animates components based on code content
+// ═══════════════════════════════════════════════════════════════════
+function toggleSim() {
+  if (STATE.simRunning) {
+    stopSim();
+  } else {
+    startSim();
+  }
+}
+
+function startSim() {
+  STATE.simRunning = true;
+  STATE.simTick = 0;
+  const badge = document.getElementById('sim-status-badge');
+  badge.classList.add('running');
+  document.getElementById('sim-state-txt').textContent = 'RUNNING';
+  document.getElementById('btn-sim').innerHTML = `
+    <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+    Stop Sim`;
+  sysLog('▶ Simulation started');
+
+  const code = STATE.code;
+  const delayMs = extractDelay(code);
+  const simSpeed = Math.max(100, delayMs);
+
+  STATE.simInterval = setInterval(() => simTick(code), simSpeed);
+}
+
+function stopSim() {
+  STATE.simRunning = false;
+  if (STATE.simInterval) { clearInterval(STATE.simInterval); STATE.simInterval = null; }
+  const badge = document.getElementById('sim-status-badge');
+  badge.classList.remove('running');
+  document.getElementById('sim-state-txt').textContent = 'IDLE';
+  document.getElementById('btn-sim').innerHTML = `
+    <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+    Run Sim`;
+
+  // Reset all component states
+  STATE.components.forEach(c => {
+    c.state = false;
+    updateComponentVisual(c);
+  });
+  setGPIO2LED(false);
+  sysLog('⏹ Simulation stopped');
+}
+
+function simTick(code) {
+  STATE.simTick++;
+  const even = STATE.simTick % 2 === 0;
+
+  const hasBlink  = /LED_BUILTIN|LED_PIN|digitalWrite/.test(code);
+  const hasServo  = /\.write\s*\(|Servo/.test(code);
+  const hasDHT    = /readTemperature|DHT/.test(code);
+  const hasUltra  = /pulseIn|TRIG/.test(code);
+  const hasOLED   = /SSD1306|display\./.test(code);
+
+  // GPIO2 built-in LED blink
+  if (hasBlink) {
+    setGPIO2LED(even);
+    if (STATE.simTick <= 12) {
+      addLog(even ? '[HIGH] LED on  GPIO2' : '[LOW]  LED off GPIO2', even ? 'log-ok' : 'log-norm', 'serial');
+    }
+  }
+
+  // External components
+  STATE.components.forEach(c => {
+    if (c.type === 'led_r' || c.type === 'led_g' || c.type === 'led_b') {
+      c.state = hasBlink ? even : false;
+      updateComponentVisual(c);
+    }
+    if (c.type === 'servo' && hasServo) {
+      c.angle = even ? 180 : 0;
+      updateComponentVisual(c);
+      if (STATE.simTick <= 8 && even) addLog(`Servo → ${c.angle}°`, 'log-info', 'serial');
+    }
+    if ((c.type === 'dht11') && hasDHT) {
+      c.state = true;
+      c.value = +(24 + Math.random() * 4).toFixed(1);
+      if (STATE.simTick % 4 === 0) addLog(`Temp: ${c.value}°C  Hum: ${+(60+Math.random()*8).toFixed(1)}%`, 'log-info', 'serial');
+    }
+    if (c.type === 'oled' && hasOLED) {
+      c.state = true;
+      updateComponentVisual(c);
+    }
+    if (c.type === 'ultrasonic' && hasUltra) {
+      if (STATE.simTick % 5 === 0) {
+        const dist = +(15 + Math.random() * 30).toFixed(1);
+        addLog(`Distance: ${dist} cm`, 'log-info', 'serial');
+      }
+    }
+    if (c.type === 'buzzer') {
+      c.state = hasBlink ? even : false;
+      updateComponentVisual(c);
+    }
+    if (c.type === 'relay') {
+      c.state = hasBlink ? even : false;
+      updateComponentVisual(c);
+    }
+  });
+}
+
+function updateComponentVisual(comp) {
+  const on = comp.state;
+  const mesh = comp.mesh;
+  if (!mesh) return;
+
+  if (comp.type === 'led_r' || comp.type === 'led_g' || comp.type === 'led_b') {
+    if (mesh.userData.ledMat) {
+      mesh.userData.ledMat.emissiveIntensity = on ? 1.2 : 0;
+      mesh.userData.ledMat.opacity = on ? 1 : 0.75;
+    }
+    const light = LED_LIGHTS.get(comp.id);
+    if (light) {
+      light.intensity = on ? 1.5 : 0;
+      light.position.copy(mesh.position);
+      light.position.y += 0.5;
+    }
+  }
+
+  if (comp.type === 'servo' && mesh.userData.horn) {
+    mesh.userData.horn.rotation.y = (comp.angle * Math.PI) / 180;
+  }
+
+  if (comp.type === 'oled' && mesh.userData.screenMat) {
+    mesh.userData.screenMat.emissive.set(on ? 0x2266ff : 0x000010);
+    mesh.userData.screenMat.emissiveIntensity = on ? 0.6 : 0;
+  }
+
+  if (comp.type === 'relay' && mesh.userData.statusLedMat) {
+    mesh.userData.statusLedMat.emissiveIntensity = on ? 1.0 : 0;
+  }
+}
+
+function setGPIO2LED(on) {
+  if (PCB_GROUP.userData.gpio2LED) {
+    const { mat } = PCB_GROUP.userData.gpio2LED;
+    mat.emissiveIntensity = on ? 1.0 : 0;
+  }
+}
+
+function extractDelay(code) {
+  const m = code.match(/\bdelay\s*\(\s*(\d+)\s*\)/);
+  return m ? Math.min(+m[1], 2000) : 500;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION 8 — ORBIT + DRAG CONTROLS (no external library needed)
+// ═══════════════════════════════════════════════════════════════════
+let orb = {
+  theta: Math.PI * 0.3,
+  phi: Math.PI * 0.28,
+  radius: 12,
+  targetX: 0, targetY: 0, targetZ: 0,
+  mouseDown: false,
+  lastX: 0, lastY: 0,
+  button: 0,
+};
+
+function initOrbitControls(canvas) {
+  canvas.addEventListener('mousedown', e => {
+    // Check if we hit a component first
+    if (e.button === 0 && tryPickComponent(e)) return;
+    orb.mouseDown = true;
+    orb.lastX = e.clientX;
+    orb.lastY = e.clientY;
+    orb.button = e.button;
+    e.preventDefault();
+  });
+
+  canvas.addEventListener('mousemove', e => {
+    // Hover picking
+    hoverPickComponent(e);
+
+    if (DRAG_STATE) {
+      dragComponent(e);
+      return;
+    }
+    if (!orb.mouseDown) return;
+    const dx = e.clientX - orb.lastX;
+    const dy = e.clientY - orb.lastY;
+    orb.lastX = e.clientX;
+    orb.lastY = e.clientY;
+
+    if (orb.button === 0) {
+      // Left drag = orbit
+      orb.theta -= dx * 0.008;
+      orb.phi = Math.max(0.05, Math.min(Math.PI / 2 - 0.02, orb.phi - dy * 0.008));
+    } else if (orb.button === 2) {
+      // Right drag = pan
+      const panSpeed = orb.radius * 0.001;
+      orb.targetX -= dx * panSpeed;
+      orb.targetZ += dy * panSpeed;
+    }
+    updateCamera();
+  });
+
+  canvas.addEventListener('mouseup', e => {
+    orb.mouseDown = false;
+    if (DRAG_STATE) { DRAG_STATE = null; }
+  });
+
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    orb.radius = Math.max(2, Math.min(25, orb.radius + e.deltaY * 0.012));
+    updateCamera();
+  }, { passive: false });
+
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  canvas.addEventListener('dblclick', e => {
+    if (trySelectComponent(e)) return;
+  });
+}
+
+function updateCamera() {
+  const x = orb.targetX + orb.radius * Math.sin(orb.phi) * Math.sin(orb.theta);
+  const y = orb.radius * Math.cos(orb.phi);
+  const z = orb.targetZ + orb.radius * Math.sin(orb.phi) * Math.cos(orb.theta);
+  THREE_CAMERA.position.set(x, y, z);
+  THREE_CAMERA.lookAt(orb.targetX, orb.targetY, orb.targetZ);
+}
+
+function resetCamera() {
+  orb.theta = Math.PI * 0.3;
+  orb.phi = Math.PI * 0.28;
+  orb.radius = 12;
+  orb.targetX = 0; orb.targetY = 0; orb.targetZ = 0;
+  updateCamera();
+}
+
+function camTop() {
+  orb.phi = 0.06;
+  orb.radius = 10;
+  updateCamera();
+}
+
+function camFront() {
+  orb.theta = 0;
+  orb.phi = Math.PI * 0.38;
+  orb.radius = 12;
+  updateCamera();
+}
+
+// Raycasting — component picking
+function getMouseNDC(e) {
+  const rect = document.getElementById('three-canvas').getBoundingClientRect();
+  MOUSE_VEC.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  MOUSE_VEC.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+}
+
+function getPickableObjects() {
+  const objs = [];
+  STATE.components.forEach(c => {
+    c.mesh.traverse(child => { if (child.isMesh) objs.push(child); });
+  });
+  return objs;
+}
+
+function tryPickComponent(e) {
+  getMouseNDC(e);
+  RAYCASTER.setFromCamera(MOUSE_VEC, THREE_CAMERA);
+  const hits = RAYCASTER.intersectObjects(getPickableObjects());
+  if (!hits.length) return false;
+
+  const hit = hits[0];
+  const compId = hit.object.userData.compId;
+  const comp = STATE.components.find(c => c.id === compId);
+  if (!comp) return false;
+
+  // Start drag
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const pt = new THREE.Vector3();
+  RAYCASTER.ray.intersectPlane(plane, pt);
+  DRAG_STATE = {
+    comp,
+    plane,
+    offset: new THREE.Vector3().subVectors(comp.mesh.position, pt),
+  };
+
+  STATE.selectedId = compId;
+  showCompPopup(comp);
+  return true;
+}
+
+function trySelectComponent(e) {
+  getMouseNDC(e);
+  RAYCASTER.setFromCamera(MOUSE_VEC, THREE_CAMERA);
+  const hits = RAYCASTER.intersectObjects(getPickableObjects());
+  if (!hits.length) return false;
+  const compId = hits[0].object.userData.compId;
+  const comp = STATE.components.find(c => c.id === compId);
+  if (!comp) return false;
+  STATE.selectedId = compId;
+  showCompPopup(comp);
+  return true;
+}
+
+function dragComponent(e) {
+  if (!DRAG_STATE) return;
+  getMouseNDC(e);
+  RAYCASTER.setFromCamera(MOUSE_VEC, THREE_CAMERA);
+  const pt = new THREE.Vector3();
+  RAYCASTER.ray.intersectPlane(DRAG_STATE.plane, pt);
+  DRAG_STATE.comp.mesh.position.addVectors(pt, DRAG_STATE.offset);
+  DRAG_STATE.comp.mesh.position.y = 0.08;
+
+  // Move LED light with LED
+  const light = LED_LIGHTS.get(DRAG_STATE.comp.id);
+  if (light) {
+    light.position.copy(DRAG_STATE.comp.mesh.position);
+    light.position.y += 0.5;
+  }
+}
+
+function hoverPickComponent(e) {
+  getMouseNDC(e);
+  RAYCASTER.setFromCamera(MOUSE_VEC, THREE_CAMERA);
+  const hits = RAYCASTER.intersectObjects(getPickableObjects());
+
+  if (hits.length > 0) {
+    const compId = hits[0].object.userData.compId;
+    const comp = STATE.components.find(c => c.id === compId);
+    if (comp) {
+      showCompPopup(comp);
+      document.getElementById('three-canvas').style.cursor = 'grab';
+      return;
+    }
+  }
+  document.getElementById('three-canvas').style.cursor = 'default';
+  if (!STATE.selectedId) {
+    document.getElementById('comp-popup').classList.remove('visible');
+  }
+}
+
+function showCompPopup(comp) {
+  const popup = document.getElementById('comp-popup');
+  document.getElementById('popup-name').textContent = comp.label;
+  document.getElementById('popup-pin').textContent = `GPIO: ${comp.gpio || 'N/A'}`;
+  document.getElementById('popup-state').textContent = `State: ${comp.state ? 'ON ●' : 'OFF ○'}`;
+  popup.classList.add('visible');
+}
+
+// Keyboard: Del to remove selected component
+document.addEventListener('keydown', e => {
+  if (e.target === document.getElementById('code-area')) return;
+  if ((e.key === 'Delete' || e.key === 'Backspace') && STATE.selectedId) {
+    removeComponent(STATE.selectedId);
+    STATE.selectedId = null;
+  }
+  if (e.key === ' ' && e.target !== document.getElementById('code-area')) {
+    e.preventDefault();
+    toggleSim();
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'r') { e.preventDefault(); apiVerify(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'u') { e.preventDefault(); apiUpload(); }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION 9 — RENDER LOOP
+// Keeps running via requestAnimationFrame — works offline permanently
+// ═══════════════════════════════════════════════════════════════════
+function animate() {
+  requestAnimationFrame(animate); // never stops until tab/window is closed
+  THREE_RENDERER.render(THREE_SCENE, THREE_CAMERA);
+}
+
+function resizeRenderer() {
+  const container = document.getElementById('sim-area');
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  THREE_CAMERA.aspect = w / h;
+  THREE_CAMERA.updateProjectionMatrix();
+  THREE_RENDERER.setSize(w, h, false);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION 10 — CODE EDITOR
+// Syntax highlight, line numbers, cursor tracking
+// ═══════════════════════════════════════════════════════════════════
+const KW  = ['void','int','long','float','double','char','byte','bool','boolean','String','unsigned','const','static','volatile','return','if','else','for','while','do','switch','case','break','continue','new','delete','typedef','nullptr','true','false','inline'];
+const FNS = ['setup','loop','pinMode','digitalWrite','digitalRead','analogWrite','analogRead','delay','millis','micros','map','constrain','Serial','Wire','SPI','begin','end','println','print','printf','available','read','write','attach','detach','tone','noTone','pulseIn','shiftOut','ledcSetup','ledcAttachPin','ledcWrite','analogSetAttenuation','analogReadResolution','scanNetworks','SSID','RSSI'];
+const VVS = ['HIGH','LOW','INPUT','OUTPUT','INPUT_PULLUP','INPUT_PULLDOWN','LED_BUILTIN','MSBFIRST','LSBFIRST','RISING','FALLING','CHANGE','NULL','true','false','WIFI_STA','WIFI_AP','SSD1306_WHITE','SSD1306_SWITCHCAPVCC','ADC_11db','WL_CONNECTED','HTTP_CODE_OK'];
+const TPS = ['int','long','float','double','char','byte','bool','boolean','String','void','unsigned','uint8_t','uint16_t','uint32_t','int8_t','int16_t','int32_t','size_t','word','short','auto'];
+
+function highlight(src) {
+  return src.split('\n').map(line => {
+    const t = line.trimStart();
+    if (t.startsWith('//')) return `<span class="C">${esc(line)}</span>`;
+    if (t.startsWith('#'))  return `<span class="P">${esc(line)}</span>`;
+    let res = '', i = 0;
+    while (i < line.length) {
+      if (line[i] === '/' && line[i+1] === '/') { res += `<span class="C">${esc(line.slice(i))}</span>`; break; }
+      if (line[i] === '"') {
+        let j = i + 1;
+        while (j < line.length && !(line[j] === '"' && line[j-1] !== '\\')) j++;
+        res += `<span class="S">${esc(line.slice(i, j+1))}</span>`; i = j+1; continue;
+      }
+      if (/[a-zA-Z_$]/.test(line[i])) {
+        let j = i;
+        while (j < line.length && /[\w$]/.test(line[j])) j++;
+        const w = line.slice(i, j);
+        const cls = KW.includes(w)?'K':FNS.includes(w)?'F':VVS.includes(w)?'V':TPS.includes(w)?'T':'';
+        res += cls ? `<span class="${cls}">${esc(w)}</span>` : esc(w);
+        i = j; continue;
+      }
+      if (/[0-9]/.test(line[i]) && (i === 0 || !/\w/.test(line[i-1]))) {
+        let j = i;
+        while (j < line.length && /[\d.xXabcdefABCDEF]/.test(line[j])) j++;
+        res += `<span class="N">${esc(line.slice(i, j))}</span>`; i = j; continue;
+      }
+      res += esc(line[i]); i++;
+    }
+    return res;
+  }).join('\n');
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function rebuildLineNums() {
+  const lines = STATE.code.split('\n');
+  document.getElementById('line-nums').innerHTML = lines.map((_, i) => `<div class="ln">${i+1}</div>`).join('');
+}
+
+function syncScroll(ta) {
+  const hl = document.getElementById('hl-layer');
+  const ln = document.getElementById('line-nums');
+  hl.scrollTop = ta.scrollTop;
+  hl.scrollLeft = ta.scrollLeft;
+  ln.scrollTop = ta.scrollTop;
+}
+
+function updateCursor() {
+  const ta = document.getElementById('code-area');
+  const before = ta.value.substring(0, ta.selectionStart);
+  const ln = before.split('\n').length;
+  const col = before.split('\n').pop().length + 1;
+  document.getElementById('sb-cursor').textContent = `Ln ${ln}, Col ${col}`;
+}
+
+let codeDebounce = null;
+function onCodeInput() {
+  STATE.code = document.getElementById('code-area').value;
+  STATE.dirty = true;
+  document.getElementById('dirty-dot').classList.add('dirty');
+  document.getElementById('hl-layer').innerHTML = highlight(STATE.code);
+  rebuildLineNums();
+  updateCursor();
+
+  // Debounce code→component sync at 600ms
+  clearTimeout(codeDebounce);
+  codeDebounce = setTimeout(syncCodeToComponents, 600);
+}
+
+function onKeyDown(e) {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const ta = document.getElementById('code-area');
+    const s = ta.selectionStart;
+    ta.value = ta.value.substring(0, s) + '  ' + ta.value.substring(ta.selectionEnd);
+    ta.selectionStart = ta.selectionEnd = s + 2;
+    onCodeInput();
+  }
+}
+
+function setCode(code, filename = 'sketch.ino') {
+  STATE.code = code;
+  document.getElementById('code-area').value = code;
+  document.getElementById('hl-layer').innerHTML = highlight(code);
+  rebuildLineNums();
+  document.getElementById('file-name').textContent = filename;
+  document.getElementById('dirty-dot').classList.remove('dirty');
+  STATE.dirty = false;
+  // Sync components from this new code
+  setTimeout(() => syncCodeToComponents(), 100);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION 11 — CODE ↔ COMPONENT BIDIRECTIONAL SYNC
+// When code changes → update components.
+// When component added/removed → update code.
+// ═══════════════════════════════════════════════════════════════════
+
+// Code keywords that indicate a component type is needed
+const CODE_PATTERNS = {
+  'led_r': [/LED_BUILTIN/, /LED_PIN/, /digitalWrite\s*\(\s*2\b/],
+  'servo': [/ESP32Servo/, /Servo\s+\w+/, /\.write\s*\(/],
+  'dht11': [/DHT11/, /#include\s+[<"]DHT\.h[>"]/],
+  'dht22': [/DHT22/],
+  'oled':  [/SSD1306/, /#include\s+[<"]Adafruit_SSD1306\.h[>"]/],
+  'ultrasonic': [/TRIG_PIN/, /HC-SR04/, /pulseIn/],
+  'pot':   [/analogRead\s*\(\s*32\b/, /POT_PIN/],
+};
+
+function syncCodeToComponents() {
+  if (!STATE.codeToCompSync) return;
+  const code = STATE.code;
+
+  // For each pattern group, check if code has it → ensure component exists
+  Object.entries(CODE_PATTERNS).forEach(([type, patterns]) => {
+    const matches = patterns.some(p => p.test(code));
+    const exists = STATE.components.some(c => c.type === type);
+
+    if (matches && !exists) {
+      addComponent(type, { silent: true }); // add without re-injecting code
+      sysLog(`🔄 Auto-added ${COMP_DEFS[type].label} (detected in code)`);
+    }
+    if (!matches && exists && !userAddedTypes.has(type)) {
+      // Only remove if it wasn't manually added by the user
+      const comp = STATE.components.find(c => c.type === type);
+      if (comp) {
+        removeComponent(comp.id);
+        sysLog(`🔄 Auto-removed ${COMP_DEFS[type].label} (not in code)`);
+      }
+    }
+  });
+
+  // Live update LED states from digitalWrite
+  const dw = [...code.matchAll(/digitalWrite\s*\(\s*(\w+)\s*,\s*(HIGH|LOW)\s*\)/g)];
+  dw.forEach(m => {
+    const pin = m[1], hi = m[2] === 'HIGH';
+    STATE.components.forEach(c => {
+      if (c.gpio === pin || (pin === 'LED_BUILTIN' && c.type === 'led_r')) {
+        c.previewState = hi;
+        updateComponentVisual({ ...c, state: hi });
+      }
+    });
+  });
+}
+
+// Track which types were explicitly added by the user (vs auto-synced)
+const userAddedTypes = new Set();
+const _addComponent = addComponent;
+
+function injectCodeForComponent(comp) {
+  const def = COMP_DEFS[comp.type];
+  if (!def || !def.gpio) return;
+
+  const pin = comp.gpio;
+  const code = STATE.code;
+
+  if (code.includes(`pinMode(${pin}`)) return; // already there
+
+  let snippet = '';
+  if (def.cMode) snippet = `\n  // ${def.label} on GPIO${pin}\n  pinMode(${pin}, ${def.cMode});`;
+  if (def.lib && !code.includes(def.lib)) {
+    snippet = `#include <${def.lib}>\n` + snippet;
+  }
+  if (!snippet) return;
+
+  const newCode = code.replace(/(void setup\s*\(\s*\)\s*\{)/, '$1' + snippet);
+  if (newCode !== code) {
+    setCode(newCode, document.getElementById('file-name').textContent);
+    sysLog(`💡 Code injected: ${def.label} GPIO${pin}`);
+  }
+}
+
+function removeCodeForComponent(comp) {
+  const def = COMP_DEFS[comp.type];
+  if (!def || !def.gpio) return;
+  const pin = comp.gpio;
+  const lines = STATE.code.split('\n').filter(line => {
+    const t = line.trim();
+    if (t.includes(`GPIO${pin}`) && t.startsWith('//')) return false;
+    if (t.startsWith(`pinMode(${pin},`) || t.startsWith(`pinMode(${pin} ,`)) return false;
+    return true;
+  });
+  const newCode = lines.join('\n');
+  if (newCode !== STATE.code) {
+    setCode(newCode, document.getElementById('file-name').textContent);
+    sysLog(`🗑 Code cleaned: ${def.label} GPIO${pin}`);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION 12 — EXAMPLES
+// ═══════════════════════════════════════════════════════════════════
+const EXAMPLES = {
+  blink: {
+    name: 'blink.ino',
+    code: `// ─────────────────────────────────────
+// ESP32 Blink — LED_BUILTIN (GPIO2)
+// Blinks the on-board LED every 500ms
+// ─────────────────────────────────────
+#define LED_PIN LED_BUILTIN   // GPIO2
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(LED_PIN, OUTPUT);
+  Serial.println("ESP32 Blink ready!");
+}
+
+void loop() {
+  digitalWrite(LED_PIN, HIGH);
+  Serial.println("[HIGH] LED on");
+  delay(500);
+
+  digitalWrite(LED_PIN, LOW);
+  Serial.println("[LOW]  LED off");
+  delay(500);
+}`
+  },
+  wifi: {
+    name: 'wifi_scan.ino',
+    code: `// WiFi Scanner — scans 2.4GHz networks
+#include <WiFi.h>
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  delay(100);
+  Serial.println("WiFi Scanner ready");
+}
+
+void loop() {
+  int n = WiFi.scanNetworks();
+  Serial.printf("Found %d networks:\\n", n);
+  for (int i = 0; i < n; i++) {
+    Serial.printf("  %d: %-30s %d dBm\\n",
+      i+1, WiFi.SSID(i).c_str(), WiFi.RSSI(i));
+  }
+  WiFi.scanDelete();
+  delay(5000);
+}`
+  },
+  servo: {
+    name: 'servo_sweep.ino',
+    code: `// Servo Sweep — GPIO18
+// Library: ESP32Servo (install via Library Manager)
+#include <ESP32Servo.h>
+
+#define SERVO_PIN 18
+Servo myServo;
+int angle = 0;
+
+void setup() {
+  Serial.begin(115200);
+  myServo.attach(SERVO_PIN);
+  Serial.println("Servo ready on GPIO18");
+}
+
+void loop() {
+  for (angle = 0; angle <= 180; angle++) {
+    myServo.write(angle);
+    delay(8);
+  }
+  Serial.println("Reached 180 deg");
+  for (angle = 180; angle >= 0; angle--) {
+    myServo.write(angle);
+    delay(8);
+  }
+  Serial.println("Reached 0 deg");
+}`
+  },
+  dht11: {
+    name: 'dht11_sensor.ino',
+    code: `// DHT11 Temperature & Humidity
+// Library: Adafruit DHT sensor library
+#include <DHT.h>
+
+#define DHT_PIN  4
+#define DHT_TYPE DHT11
+DHT dht(DHT_PIN, DHT_TYPE);
+
+void setup() {
+  Serial.begin(115200);
+  dht.begin();
+  Serial.println("DHT11 ready on GPIO4");
+}
+
+void loop() {
+  delay(2000);
+  float hum  = dht.readHumidity();
+  float temp = dht.readTemperature();
+  if (isnan(hum) || isnan(temp)) {
+    Serial.println("ERROR: DHT11 failed!");
+    return;
+  }
+  Serial.printf("Temp: %.1fC  Hum: %.1f%%\\n", temp, hum);
+}`
+  },
+  oled: {
+    name: 'oled_display.ino',
+    code: `// OLED SSD1306 128x64 — I2C SDA=21 SCL=22
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#define SCREEN_W 128
+#define SCREEN_H 64
+Adafruit_SSD1306 display(SCREEN_W, SCREEN_H, &Wire, -1);
+
+void setup() {
+  Serial.begin(115200);
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println("SSD1306 not found!");
+    while (true);
+  }
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("Gen Alpha ESP32");
+  display.println("Studio — OLED OK");
+  display.display();
+  Serial.println("OLED initialized");
+}
+
+void loop() {
+  delay(1000);
+}`
+  },
+  ultrasonic: {
+    name: 'hc_sr04.ino',
+    code: `// HC-SR04 Ultrasonic Distance Sensor
+// TRIG=GPIO12  ECHO=GPIO13
+#define TRIG_PIN 12
+#define ECHO_PIN 13
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  Serial.println("HC-SR04 ready");
+}
+
+float measure() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  long dur = pulseIn(ECHO_PIN, HIGH, 30000);
+  return dur == 0 ? -1 : dur * 0.01715;
+}
+
+void loop() {
+  float cm = measure();
+  if (cm < 0) Serial.println("Out of range");
+  else Serial.printf("Distance: %.1f cm\\n", cm);
+  delay(200);
+}`
+  },
+  pot: {
+    name: 'potentiometer.ino',
+    code: `// Potentiometer ADC — GPIO32 (12-bit)
+#define POT_PIN 32
+
+void setup() {
+  Serial.begin(115200);
+  analogReadResolution(12);
+  analogSetAttenuation(ADC_11db);  // Full 0-3.3V range
+  Serial.println("ADC ready on GPIO32");
+}
+
+void loop() {
+  int   raw = analogRead(POT_PIN);
+  float v   = raw * 3.3 / 4095.0;
+  int   pct = map(raw, 0, 4095, 0, 100);
+  Serial.printf("Raw: %4d  V: %.3f  Level: %3d%%\\n", raw, v, pct);
+  delay(100);
+}`
+  },
+};
+
+function loadExample(name) {
+  if (!name) return;
+  const ex = EXAMPLES[name];
+  if (!ex) return;
+  clearBoard();
+  setCode(ex.code, ex.name);
+  document.getElementById('example-sel').value = '';
+  sysLog(`📂 Loaded: ${ex.name}`);
+  addLog(`Loaded example: ${ex.name}`, 'log-sys', 'compiler');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION 13 — API CALLS (Verify / Upload)
+// ═══════════════════════════════════════════════════════════════════
+async function apiVerify() {
+  if (STATE.busy) return;
+  STATE.busy = true;
+  setBtns(false);
+  setStatus('Compiling…');
+  addLog(`─── Compiling for ${STATE.board} ───`, 'log-sys', 'compiler');
+  setConsoleTab('compiler');
+
+  try {
+    const res = await fetch('/api/compile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: STATE.code, board: STATE.board }),
+    });
+    const d = await res.json();
+
+    addLog(`Pipeline: ${d.elapsed_ms}ms | ${d.summary.errors} errors | ${d.summary.warnings} warnings`, 'log-info', 'compiler');
+
+    if (d.lib_info && d.lib_info.length) {
+      addLog('Libraries: ' + d.lib_info.join(', '), 'log-dim', 'compiler');
+    }
+
+    if (d.diagnostics && d.diagnostics.length) {
+      d.diagnostics.forEach(diag => {
+        const cls = diag.severity === 'error' ? 'log-err' : diag.severity === 'warning' ? 'log-warn' : 'log-info';
+        addLog(`[${diag.code}] Ln ${diag.line}: ${diag.message}`, cls, 'compiler');
+        addLog(`[${diag.code}] Ln ${diag.line}: ${diag.message}`, cls, 'diag');
+      });
+      const errCount = d.summary.errors;
+      if (errCount > 0) document.getElementById('badge-diag').classList.add('show');
+    }
+
+    if (d.status !== 'error') {
+      addLog(d.size_message, 'log-dim', 'compiler');
+      addLog('✓ Compilation successful', 'log-ok', 'compiler');
+      setStatus(`Compiled OK · ${d.flash.pct}% flash`);
+
+      // Show function list
+      if (d.functions && d.functions.length) {
+        addLog(`Functions: ${d.functions.map(f => f.name+'()').join(', ')}`, 'log-info', 'compiler');
+      }
+    } else {
+      setStatus(`${d.summary.errors} error(s)`, true);
+    }
+  } catch (e) {
+    addLog('Network error — is Flask running? python app.py', 'log-err', 'compiler');
+    setStatus('Network error');
+  }
+
+  STATE.busy = false;
+  setBtns(true);
+}
+
+async function apiUpload() {
+  if (STATE.busy) return;
+  STATE.busy = true;
+  setBtns(false);
+  setStatus('Uploading…');
+  setConsoleTab('serial');
+  clearConsoleTab('serial');
+
+  try {
+    const res = await fetch('/api/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: STATE.code, board: STATE.board }),
+    });
+    const d = await res.json();
+
+    if (d.status === 'success') {
+      (d.serial || []).forEach(line => {
+        const cls = line.includes('✓') || line.includes('complete') || line.includes('Ready') ? 'log-ok'
+                  : line.includes('Error') ? 'log-err'
+                  : line.includes('esptool') || line.includes('Flash') ? 'log-info'
+                  : 'log-norm';
+        addLog(line, cls, 'serial');
+      });
+      setStatus('Uploaded ✓');
+      if (!STATE.simRunning) startSim();
+    } else {
+      addLog(d.message || 'Upload failed', 'log-err', 'serial');
+      (d.diagnostics || []).slice(0, 3).forEach(diag => addLog(`[${diag.code}] ${diag.message}`, 'log-err', 'serial'));
+      setStatus('Upload failed');
+    }
+  } catch (e) {
+    addLog('Network error', 'log-err', 'serial');
+    setStatus('Network error');
+  }
+
+  STATE.busy = false;
+  setBtns(true);
+}
+
+function onBoardChange(b) {
+  STATE.board = b;
+  const names = { esp32: 'ESP32 Dev Module', esp32s3: 'ESP32-S3', uno: 'Arduino Uno CH340G', nano: 'Arduino Nano' };
+  document.getElementById('sb-board').textContent = names[b] || b;
+  sysLog(`Board: ${names[b]}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION 14 — CONSOLE / LOG
+// ═══════════════════════════════════════════════════════════════════
+function addLog(text, cls = 'log-norm', tab = 'serial') {
+  STATE.logs[tab].push({ text, cls });
+  if (STATE.consoleTab === tab) {
+    const el = document.getElementById('log-output');
+    const div = document.createElement('div');
+    div.className = cls;
+    div.textContent = text;
+    el.appendChild(div);
+    if (STATE.autoscroll) el.scrollTop = el.scrollHeight;
+  }
+}
+
+function sysLog(text) {
+  addLog(text, 'log-sys', 'serial');
+  addLog(text, 'log-sys', 'compiler');
+}
+
+function setConsoleTab(tab) {
+  STATE.consoleTab = tab;
+  ['serial', 'compiler', 'diag'].forEach(t => {
+    document.getElementById(`tab-${t}`).classList.toggle('active', t === tab);
+  });
+  renderConsole();
+}
+
+function renderConsole() {
+  const el = document.getElementById('log-output');
+  el.innerHTML = '';
+  STATE.logs[STATE.consoleTab].forEach(({ text, cls }) => {
+    const div = document.createElement('div');
+    div.className = cls;
+    div.textContent = text;
+    el.appendChild(div);
+  });
+  if (STATE.autoscroll) el.scrollTop = el.scrollHeight;
+}
+
+function clearConsole() {
+  clearConsoleTab(STATE.consoleTab);
+}
+
+function clearConsoleTab(tab) {
+  STATE.logs[tab] = [];
+  if (STATE.consoleTab === tab) document.getElementById('log-output').innerHTML = '';
+}
+
+function toggleAutoscroll() {
+  STATE.autoscroll = !STATE.autoscroll;
+  const btn = document.getElementById('autoscroll-btn');
+  btn.classList.toggle('active', STATE.autoscroll);
+  btn.textContent = STATE.autoscroll ? '↓ Auto' : '↓ Off';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION 15 — STATUS & UI HELPERS
+// ═══════════════════════════════════════════════════════════════════
+function setStatus(text, isError = false) {
+  const el = document.getElementById('sb-status');
+  el.textContent = text;
+  el.style.color = isError ? '#f85149' : 'inherit';
+}
+
+function setBtns(on) {
+  ['btn-verify', 'btn-upload'].forEach(id => {
+    document.getElementById(id).disabled = !on;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION 16 — BOOTSTRAP
+// Load Three.js scene, then fade out loader
+// ═══════════════════════════════════════════════════════════════════
+window.addEventListener('load', () => {
+  setProgress(10);
+
+  // Check Three.js loaded
+  if (typeof THREE === 'undefined') {
+    document.querySelector('.loader-sub').textContent = 'Error: Three.js not loaded. Check internet connection for first load.';
+    return;
+  }
+
+  // Small delay so loader is visible during init
+  setTimeout(() => {
+    try {
+      initThree();
+      setProgress(95);
+
+      // Load default blink sketch
+      setCode(EXAMPLES.blink.code, 'blink.ino');
+      addLog('⚡ Gen Alpha ESP32 Studio — 3D Simulator ready', 'log-sys', 'serial');
+      addLog('Three.js r128 · WebGL 3D engine active', 'log-sys', 'serial');
+      addLog('Tip: once loaded, works 100% offline', 'log-dim', 'serial');
+      addLog('Tip: drag components to move · Del to remove · Space to run sim', 'log-dim', 'serial');
+      addLog('', 'log-dim', 'serial');
+
+      setProgress(100);
+      setTimeout(() => {
+        const loader = document.getElementById('loader');
+        loader.classList.add('hidden');
+        setTimeout(() => { loader.style.display = 'none'; }, 500);
+        resizeRenderer();
+      }, 300);
+    } catch (e) {
+      console.error(e);
+      document.querySelector('.loader-sub').textContent = 'Init error: ' + e.message;
+    }
+  }, 150);
+});
+</script>
+</body>
+</html>
